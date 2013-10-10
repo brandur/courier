@@ -4,23 +4,47 @@ Dir["./vendor/**/*.jar"].each { |j|
   $CLASSPATH << j
 }
 
-class ConsumerGroupExample
-  def initialize(zookeeper, group_id, topic)
-    @consumer = kafka.consumer.Consumer.create_java_consumer_connector(
-      create_consumer_config(zookeeper, group_id))
-    @topic = topic
+class ConsumerTest
+  include java.lang.Runnable
+
+  def initialize(stream, thread_num)
+    @stream = stream
+    @thread_num = thread_num
   end
 
   def run
-    streams_map = @consumer.createMessageStreams({ @topic => 1.to_java(:int) })
-    streams = streams_map[@topic]
-    streams.first.each do |item|
+    puts "running = #{@thread_num}"
+    iterator = @stream.iterator
+    @stream.each do |item|
+      p @thread_num
       p String.from_java_bytes(item.message)
+    end
+  rescue
+    p $!
+  end
+end
+
+class ConsumerGroupExample
+  def initialize(zookeeper, group_id, topic, num_threads)
+    @consumer = kafka.consumer.Consumer.create_java_consumer_connector(
+      create_consumer_config(zookeeper, group_id))
+    @topic = topic
+    @num_threads = num_threads
+  end
+
+  def run
+    streams_map = @consumer.create_message_streams(
+      { @topic => @num_threads.to_java(:int) })
+    streams = streams_map[@topic]
+    @executor = java.util.concurrent.Executors.new_fixed_thread_pool(@num_threads)
+    streams.each_with_index do |stream, i|
+      @executor.submit(ConsumerTest.new(stream, i))
     end
   end
 
   def shutdown
     @consumer.shutdown
+    @executor.shutdown if @executor
   end
 
   private
@@ -43,9 +67,10 @@ end
 example = ConsumerGroupExample.new(
   ARGV[0] || raise("missing arg!"),
   ARGV[1] || raise("missing arg!"),
-  ARGV[2] || raise("missing arg!")
+  ARGV[2] || raise("missing arg!"),
+  3
 )
 example.run
-sleep(1000)
+sleep(60)
 puts "shutdown"
 example.shutdown
