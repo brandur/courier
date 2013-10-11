@@ -28,15 +28,15 @@ class ConsumerGroupExample
   def initialize(zookeeper, group_id, topic, num_threads)
     @consumer = kafka.consumer.Consumer.create_java_consumer_connector(
       create_consumer_config(zookeeper, group_id))
-    @topic = topic
+    @executor = java.util.concurrent.Executors.new_fixed_thread_pool(num_threads)
     @num_threads = num_threads
+    @topic = topic
   end
 
   def run
     streams_map = @consumer.create_message_streams(
       { @topic => @num_threads.to_java(:int) })
     streams = streams_map[@topic]
-    @executor = java.util.concurrent.Executors.new_fixed_thread_pool(@num_threads)
     streams.each_with_index do |stream, i|
       @executor.submit(ConsumerTest.new(stream, i))
     end
@@ -44,7 +44,7 @@ class ConsumerGroupExample
 
   def shutdown
     @consumer.shutdown
-    @executor.shutdown if @executor
+    @executor.shutdown
   end
 
   private
